@@ -18,16 +18,21 @@ data Mixer = Mixer {    channels    :: Maybe (Map.Map String Channel),
                    }
     deriving (Show)
 
-data Channel = Channel {    sndData :: Ptr Sound,
-                            alias   :: String,
-                            status  :: Status,
-                            volume  :: Float
+data Channel = Channel {    sndData :: Ptr Sound, -- ^ The pointer to the memory
+                                                  -- address where the sound is
+                            alias   :: String,  -- ^ The name of the channel
+                            status  :: Status,  -- ^ The status of the channel
+                            volume  :: Float    -- ^ The volume of the channel
                        }
     deriving (Show)
 
+-- | Initialize a mixer.  This must be called first!
 initMixer :: Mixer
 initMixer = Mixer Nothing 100.0 Nothing
 
+-- | Add a channel to a mixer. This checks if the name
+-- of the channel already exists and if it does it will not
+-- add it to the mix.
 addChannel :: Mixer -> FilePath -> String -> Float -> IO (Mixer)
 addChannel mix@(Mixer chans vol music) inFile name chanVol = do
     case music of
@@ -51,7 +56,13 @@ addChannel mix@(Mixer chans vol music) inFile name chanVol = do
 
             return (Channel snd name stat chanVol)
 
-loadMusic :: Mixer -> FilePath -> IO (Mixer)
+-- | loadMusic will load a file from the given path but not
+-- play it as background music.  If music is already playing
+-- it will stop and free the memory associated with the
+-- music. Music volume is controlled by the global volume.
+loadMusic   :: Mixer        -- ^ Mixer to load music into
+            -> FilePath     -- ^ FilePath of music
+            -> IO (Mixer)   -- ^ New mixer with music loaded into it
 loadMusic (Mixer chans vol music) inFile = do
     case music of
         Nothing -> do
@@ -69,42 +80,62 @@ loadMusic (Mixer chans vol music) inFile = do
             
             return (Mixer chans vol (Just music'))
 
-playMusic :: Mixer -> IO (Mixer)
+-- | This will play the music that is loaded via
+-- loadMusic is any.
+playMusic :: Mixer -> IO ()
 playMusic mix@(Mixer chans vol music) = do
     case music of
         Nothing -> do
             print ("NO MUSIC LOADED")
-            return mix
+            return ()
         Just music -> do
             sfMusic_Play music
-            return mix
-          
-setPan :: Mixer -> String -> (Float, Float, Float) -> IO (Mixer) 
-setPan mix@(Mixer chans vol music) chanName (x, y, z) = do
+            return ()
+
+-- | Encapsulates the playMusic functionality.
+-- Loads a file and then starts it
+withMusic   :: Mixer -- ^ Mixer to use
+            -> FilePath -- ^ FilePath of music to load and start
+            -> IO ()
+withMusic mix inFile = do
+    mix' <- loadMusic mix inFile
+    playMusic mix'
+   
+-- | This will pan a MONO channel in 3d space
+-- relative to 0,0,0. 
+channelPan  :: Mixer -- ^ Mixer where the channel resides
+            -> String -- ^ Name of the channel
+            -> (Float, Float, Float)  -- ^ (x, y, z)
+            -> IO () 
+channelPan mix@(Mixer chans vol music) chanName (x, y, z) = do
     case chans of
         Nothing -> do
             print ("NO CHANNELS TO PAN")
-            return mix
+            return ()
         Just chans -> do
             let chan = chans Map.! chanName
             sfSound_SetPosition (sndData chan) x y z
-            return mix
+            return () 
 
+-- | Starts a channel by name.
+startChannel    :: Mixer    -- ^ Mixer to search for the channel in
+                -> String   -- ^ Name of the channel to adjust
+                -> IO ()
 startChannel mix@(Mixer chans vol music) chanName = do
     case chans of
         Nothing -> do
             print ("NO CHANNELS TO START")
-            return mix
+            return ()
         Just chans -> do
             let chan = chans Map.! chanName
             sfSound_Play (sndData chan)
-            return mix
+            return ()
 main = do
     let mix = initMixer
         inFile = "/home/sam/src/Noize/shpongle-mono.ogg"
     --mix' <- loadMusic mix inFile
     --playMusic mix'
-    mix' <- addChannel mix inFile "shpongle" 100.0
-    startChannel mix' "shpongle"
-    setPan mix' "shpongle" (0.0, 100.0, 0.0)
+    mix' <- addChannel mix inFile "shpongle2" 100.0
+    startChannel mix' "shpongle2"
+    channelPan mix' "shpongle2" (50.0, 0.0, 0.0)
     forever $ do (threadDelay 10000)
