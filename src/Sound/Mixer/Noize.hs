@@ -1,16 +1,34 @@
 {-# LANGUAGE ScopedTypeVariables #-}
-
-module Sound.Mixer.Noize {-(
+-- | This module is a work in progress.
+-- All of the commented functions below are
+-- to be exported.
+module Sound.Mixer.Noize (
         -- * Mix Control
         Mixer(..),
         initMixer,
+        
         -- * Channel
         Channel(..),
         -- ** Adding channels
         addChannel,
         -- ** Removing channels
-        removeChannel,-}
-where
+        --removeChannel,
+        -- ** Controlling channels
+        startChannel,
+        --stopChannel
+        --pauseChannel
+        
+        -- * Music
+        Music(..),
+        -- ** Loading music
+        loadMusic,
+        withMusic,
+        -- ** Controlling music
+        playMusic
+        --pauseMusic
+        --stopMusic
+        )
+    where
 
 import Foreign.Ptr
 import qualified Data.Map.Strict as Map
@@ -107,7 +125,7 @@ loadMusic (Mixer chans vol music) inFile = do
             return (Mixer chans vol (Just music'))
 
 -- | This will play the music that is loaded via
--- loadMusic is any.
+-- loadMusic. 
 playMusic :: Mixer -> IO ()
 playMusic mix@(Mixer chans vol music) = do
     case music of
