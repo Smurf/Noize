@@ -46,7 +46,11 @@ cabal-version:       >=1.8
 
 
 library
-  -- Modules exported by the library.
+source-repository head
+  type:     git
+  location: https://github.com/Smurf/sfml-audio.git   
+
+-- Modules exported by the library.
   exposed-modules:     Sound.Mixer.Noize
   
   -- Modules included in this library but not exported.
