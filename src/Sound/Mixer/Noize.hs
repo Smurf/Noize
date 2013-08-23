@@ -12,21 +12,22 @@ module Sound.Mixer.Noize (
         -- ** Adding channels
         addChannel,
         -- ** Removing channels
-        --removeChannel,
+        removeChannel,
         -- ** Controlling channels
         startChannel,
-        --stopChannel
-        --pauseChannel
+        stopChannel
+        pauseChannel
         
         -- * Music
         Music(..),
         -- ** Loading music
         loadMusic,
         withMusic,
+        destroyMusic,
         -- ** Controlling music
         playMusic
-        --pauseMusic
-        --stopMusic
+        pauseMusic
+        stopMusic
         )
     where
 
@@ -48,7 +49,7 @@ data Channel = Channel {    sndData :: Ptr Sound, -- ^ The pointer to the memory
                        }
     deriving (Show)
 
-data Mixer = Mixer {    channels    :: Maybe (Map.Map String Channel),
+data Mixer = Mixer {    channels    :: Map.Map String Channel,
                         masterVol   :: Float,
                         music       :: Maybe (Ptr Music)
                    }
@@ -59,16 +60,17 @@ data Mixer = Mixer {    channels    :: Maybe (Map.Map String Channel),
 -- add it to the mix.
 addChannel :: Mixer -> FilePath -> String -> Float -> IO (Mixer)
 addChannel mix@(Mixer chans vol music) inFile name chanVol = do
-    case music of
+    let chan = M.lookup name chans
+    case chan of
+        --Doesn't exist
         Nothing -> do
             chan <- allocateChan
-            let chans' = Just (Map.singleton name chan)
+            let chans' = (Map.insert name chan) chans
             return (Mixer chans' vol music)
-
-        Just m -> do
-            chan <- allocateChan
-            let chans' = liftM (Map.insert name chan) chans
-            return (Mixer chans' vol music)
+        --Does exist
+        Just chan' -> do
+            print("Channel "++(show name)++" already exists in mixer!")
+            return mix
 
     where allocateChan = do
             buffer  <- sfSoundBuffer_CreateFromFile inFile
@@ -87,18 +89,32 @@ channelPan  :: Mixer -- ^ Mixer where the channel resides
             -> (Float, Float, Float)  -- ^ (x, y, z)
             -> IO () 
 channelPan mix@(Mixer chans vol music) chanName (x, y, z) = do
-    case chans of
+    let chan' = M.lookup chanName chans
+    case chan' of
         Nothing -> do
             print ("NO CHANNELS TO PAN")
             return ()
-        Just chans -> do
-            let chan = chans Map.! chanName
-            sfSound_SetPosition (sndData chan) x y z
+        Just chan' -> do
+            
+            sfSound_SetPosition (sndData chan') x y z
             return () 
+
+-- | This will destroy the music playing and insert
+-- @Nothing@.
+destroyMusic :: Mixer -> IO (Mixer)
+destoryMusic mix@(Mixer chans vol music) = do
+    case music of
+        Nothing -> do
+            return mix
+        Just music -> do
+            sfMusic_Stop music
+            sfMusic_Destroy music
+            
+            return (Mixer chans vol Nothing)
 
 -- | Initialize a mixer.  This must be called first!
 initMixer :: Mixer
-initMixer = Mixer Nothing 100.0 Nothing
+initMixer = Mixer Map.empty 100.0 Nothing
 
 -- | loadMusic will load a file from the given path but not
 -- play it as background music.  If music is already playing
@@ -107,7 +123,7 @@ initMixer = Mixer Nothing 100.0 Nothing
 loadMusic   :: Mixer        -- ^ Mixer to load music into
             -> FilePath     -- ^ FilePath of music
             -> IO (Mixer)   -- ^ New mixer with music loaded into it
-loadMusic (Mixer chans vol music) inFile = do
+loadMusic mix@(Mixer chans vol music) inFile = do
     case music of
         Nothing -> do
             music' <- sfMusic_CreateFromFile inFile
@@ -116,13 +132,40 @@ loadMusic (Mixer chans vol music) inFile = do
             return (Mixer chans vol (Just music'))
         
         Just music -> do
-            sfMusic_Stop music
-            sfMusic_Destroy music
+            removeMusic mix
             
             music' <- sfMusic_CreateFromFile inFile
             sfMusic_SetVolume music' vol
             
             return (Mixer chans vol (Just music'))
+
+-- | Pauses the supplied channel by name.
+pauseChannel    :: Mixer        -- ^ Mixer to search for channel in
+                -> String       -- ^ Name of channel
+                -> IO (Mixer)   -- ^ Mixer with updated channel list
+pauseChannel mix@(Mixer chans vol music) chanName = do
+    let chan = M.lookup chanName chans
+    case chan of
+        Nothing -> do
+            print ("No channel to pause named "++(show chanName))
+            return mix
+        Just (Channel snd name stat vol) -> do
+            sfChannel_Pause snd
+            stat' <- getSoundStatus snd
+            
+            let chan'   = Channel snd name stat vol
+                chans'  = M.insert name chan' chans
+            
+            return (Mixer chans' vol music)
+ 
+-- | If music is playing pause music, otherwise nothing is done.
+pauseMusic :: Mixer -> IO ()
+pauseMusic mix@(Mixer _ _ music) = do
+    case music of
+        Nothing -> return ()
+        Just music -> do
+            sfMusic_Pause music
+            return ()
 
 -- | This will play the music that is loaded via
 -- loadMusic. 
@@ -136,22 +179,72 @@ playMusic mix@(Mixer chans vol music) = do
             sfMusic_Play music
             return ()
 
-  
+-- | Removes a channel by name.
+removeChannel   :: Mixer        -- ^ Mixer to search in.
+                -> String       -- ^ Name of channel to search for
+                -> IO (Mixer)   -- ^ New mixer with updated channels.
+removeChannel mix@(Mixer chans vol music) chanName = do
+    let exists = member chanName chans
+    case exists of
+        True -> do
+            let chan    = chanName M.! chans
+                chans'  = M.delete chanName chans
+            stopChannel chan
+            return (Mixer chans' vol music)
+        False -> do
+            return mix
+
 -- | Starts a channel by name.
-startChannel    :: Mixer    -- ^ Mixer to search for the channel in
-                -> String   -- ^ Name of the channel to adjust
-                -> IO ()
+startChannel    :: Mixer        -- ^ Mixer to search for the channel in
+                -> String       -- ^ Name of the channel to adjust
+                -> IO (Mixer)   -- ^ Mixer with updated channel list.
 startChannel mix@(Mixer chans vol music) chanName = do
-    case chans of
+    let chan = M.lookup chanName chans
+    case chan of
         Nothing -> do
-            print ("NO CHANNELS TO START")
-            return ()
-        Just chans -> do
-            let chan = chans Map.! chanName
-            sfSound_Play (sndData chan)
+            print ("No channel named "++(show chanName)++" to start!")
+            return mix
+        Just (Channel snd name stat vol) -> do
+            sfSound_Play snd
+            stat' <- getSoundStatus snd
+
+            let chan' = Channel snd name stat' vol)
+                chans' = M.insert name chan' chans
+            
+            return (Mixer chans' vol music)
+
+-- | Stops a channel by  name.
+-- Returns an updated mixer.
+stopChannel     :: Mixer        -- ^ Mixer to search for channel in
+                -> String       -- ^ Name of the channel to adjust
+                -> IO (Mixer)   -- ^ Mixer with an updated channel list
+stopChannel mix@(Mixer chans vol music) chanName = do
+    let chan = M.lookup chanName chans
+    case chan of
+        Nothing -> do
+            print ("No channel to stop named "++(show chanName))
+            return mix
+        Just (Channel snd name stat vol) -> do
+            sfChannel_Stop snd
+            stat' <- getSoundStatus snd
+            
+            let chan'   = Channel snd name stat vol
+                chans'  = M.insert name chan' chans
+            
+            return (Mixer chans' vol music)
+
+-- | If music is playing stop music, otherwise nothing is done.
+-- Stop differs from pause by returning the playhead to the
+-- beginning of the music.
+stopMusic :: Mixer -> IO ()
+stopMusic mix@(Mixer _ _ _ music) = do
+    case music of
+        Nothing -> return ()
+        Just music -> do
+            sfMusic_Stop music
             return ()
 
--- | Encapsulates the playMusic functionality.
+--- | Encapsulates the playMusic functionality.
 -- Loads a file and then starts it
 withMusic   :: Mixer -- ^ Mixer to use
             -> FilePath -- ^ FilePath of music to load and start
