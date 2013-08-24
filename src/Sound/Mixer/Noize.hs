@@ -34,7 +34,7 @@ module Sound.Mixer.Noize (
         -- ** Loading music
         loadMusic,
         withMusic,
-        destroyMusic,
+        removeMusic,
         -- ** Controlling music
         startMusic,
         pauseMusic,
@@ -42,16 +42,12 @@ module Sound.Mixer.Noize (
         )
     where
 
-import Foreign.Ptr
-import qualified Data.Traversable as T
-import qualified Data.Map.Strict as Map
-
---JUNK FOR TESTING ONLY--
-import Control.Concurrent (threadDelay)
 import Control.Monad
-
---import Sound.SFML
+import Foreign.Ptr
 import Sound.SFML.LowLevel
+
+import qualified Data.Map.Strict as Map
+import qualified Data.Traversable as T
 
 data Channel = Channel {    sndData :: Ptr Sound, -- ^ The pointer to the memory
                                                   -- address where the sound is
@@ -130,8 +126,8 @@ destroyMixer mix@(Mixer chans vol music) = do
 
 -- | This will destroy the music playing and insert
 -- @Nothing@.
-destroyMusic :: Mixer -> IO (Mixer)
-destroyMusic mix@(Mixer chans vol music) = do
+removeMusic :: Mixer -> IO (Mixer)
+removeMusic mix@(Mixer chans vol music) = do
     case music of
         Nothing -> do
             return mix
