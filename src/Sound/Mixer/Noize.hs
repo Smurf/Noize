@@ -1,11 +1,22 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | This module is a work in progress.
--- All of the commented functions below are
--- to be exported.
+-- This work will eventually be merged into the
+-- sfml-audio module under Sound.SFML.Mixer
+--
+-- Functions that return IO (Mixer) are inherently
+-- stateful towards the mixer.  Meaning that they
+-- modify and update the status of the channels in
+-- the mixer.
 module Sound.Mixer.Noize (
-        -- * Mix Control
+        -- * Mixer
         Mixer(..),
+        -- ** Construction and Destruction
         initMixer,
+        destroyMixer,
+        -- ** Controlling mixers
+        --startMix
+        --pauseMix
+        --stopMix
         
         -- * Channel
         Channel(..),
@@ -32,6 +43,7 @@ module Sound.Mixer.Noize (
     where
 
 import Foreign.Ptr
+import qualified Data.Traversable as T
 import qualified Data.Map.Strict as Map
 
 --JUNK FOR TESTING ONLY--
@@ -98,6 +110,23 @@ channelPan mix@(Mixer chans vol music) chanName (x, y, z) = do
             
             sfSound_SetPosition (sndData chan') x y z
             return () 
+
+destroyChannel (Channel snd _ _ _) = do
+    sfSound_Stop snd
+    sfSound_Destroy snd
+
+-- | Destroys a mixer.  First stops all sounds playing
+-- then frees ptrs associated with a mixer.
+-- @destroyMixer myMix == initMixer@
+destroyMixer    :: Mixer        -- ^ Mixer to destroy
+                -> IO (Mixer)   -- ^ == initMixer
+destroyMixer mix@(Mixer chans vol music) = do
+    stopMixer mix
+    destroyMusic mix
+    T.mapM destroyChannel chans
+
+    return initMixer
+
 
 -- | This will destroy the music playing and insert
 -- @Nothing@.
@@ -177,9 +206,7 @@ removeChannel mix@(Mixer chans vol music) chanName = do
         Just chan'@(Channel snd name stat vol) -> do
             let chans'  = Map.delete chanName chans
             
-            stopChannel mix chanName
-            sfSound_Destroy snd
-            
+            destroyChannel chan'
             return (Mixer chans' vol music)
             
         Nothing -> do
@@ -228,14 +255,29 @@ stopChannel mix@(Mixer chans vol music) chanName = do
         Nothing -> do
             print ("No channel to stop named "++(show chanName))
             return mix
-        Just (Channel snd name stat vol) -> do
-            sfSound_Stop snd
-            stat' <- getSoundStatus snd
+        Just chan' -> do
             
-            let chan'   = Channel snd name stat vol
-                chans'  = Map.insert name chan' chans
+            chan''      <- _stopChannel chan'
+            let chans'  = Map.insert chanName chan'' chans
             
             return (Mixer chans' vol music)
+
+_stopChannel :: Channel -> IO Channel
+_stopChannel chan@(Channel snd alias stat vol) = do
+    sfSound_Stop snd
+    stat' <- getSoundStatus snd
+    return (Channel snd alias stat' vol)
+
+--stopChannels :: Mixer -> IO Mixer
+stopChannels mix@(Mixer chans vol music) = do
+    chans' <- T.mapM (_stopChannel) chans
+    return (Mixer chans' vol music)
+
+stopMixer   :: Mixer
+            -> IO (Mixer)
+stopMixer mix@(Mixer chans vol music) = do
+    stopMusic mix
+    stopChannels mix
 
 -- | If music is playing stop music, otherwise nothing is done.
 -- Stop differs from pause by returning the playhead to the
@@ -248,7 +290,7 @@ stopMusic mix@(Mixer _ _  music) = do
             sfMusic_Stop music
             return ()
 
---- | Encapsulates the startMusic functionality.
+-- | Encapsulates the startMusic functionality.
 -- Loads a file and then starts it
 withMusic   :: Mixer -- ^ Mixer to use
             -> FilePath -- ^ FilePath of music to load and start
@@ -257,12 +299,3 @@ withMusic mix inFile = do
     mix' <- loadMusic mix inFile
     startMusic mix'
 
-main = do
-    let mix = initMixer
-        inFile = "/home/sam/src/Noize/shpongle-mono.ogg"
-    --mix' <- loadMusic mix inFile
-    --startMusic mix'
-    mix' <- addChannel mix inFile "shpongle2" 100.0
-    startChannel mix' "shpongle2"
-    channelPan mix' "shpongle2" (50.0, 0.0, 0.0)
-    forever $ do (threadDelay 10000)
