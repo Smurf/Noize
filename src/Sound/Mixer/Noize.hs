@@ -32,10 +32,7 @@ module Sound.Mixer.Noize (
         -- *** Playhead Position    
         seekChannel,
         playheadPosition,
-        -- *** Properties (length, channels...)
-        {-channelDuration,
-        channelCount,
-        channelSampleRate,-}
+        
         -- ** Controlling all channels
         -- *** Playing State
         startChannels,
@@ -54,6 +51,8 @@ module Sound.Mixer.Noize (
         pauseMusic,
         stopMusic,
         -- *** Playhead Position
+        seekMusic,
+        musicPlayingOffset
         )
     where
 
@@ -84,7 +83,11 @@ data Mixer = Mixer {    channels    :: Map.Map String Channel,
 -- | Add a channel to a mixer. This checks if the name
 -- of the channel already exists and if it does it will not
 -- add it to the mix.
-addChannel :: Mixer -> FilePath -> String -> Float -> IO (Mixer)
+addChannel  :: Mixer        -- ^ Mixer to add channel to.
+            -> FilePath     -- ^ File path of sound loaded into channel.
+            -> String       -- ^ Name of channel.
+            -> Float        -- ^ Initial volume of channel.
+            -> IO (Mixer)
 addChannel mix@(Mixer chans vol music) inFile name chanVol = do
     let chan = Map.lookup name chans
     case chan of
@@ -170,6 +173,18 @@ loadMusic mix@(Mixer chans vol music) inFile = do
             sfMusic_SetVolume music' vol
             
             return (Mixer chans vol (Just music'))
+
+-- | The current playhead position on the music in a mixer.
+musicPlayingOffset  :: Mixer        -- ^ Mixer containing music.
+                    -> IO (Float)   -- ^ New playhead position in seconds.
+musicPlayingOffset mix@(Mixer chans vol music) = do
+    case music of
+        Nothing -> do
+            print ("No music loaded!")
+            return (0.0)
+        Just m -> do
+            sfMusic_GetPlayingOffset m
+
 
 -- | Pauses the supplied channel by name.
 pauseChannel    :: Mixer        -- ^ Mixer to search for channel in
@@ -277,6 +292,20 @@ seekChannel mix@(Mixer chans vol music) chanName toTime = do
 
         Just chan' -> do
             sfSound_SetPlayingOffset (sndData chan') toTime
+
+
+-- | Seeks the music in a mixer to the given offset in seconds.
+seekMusic   :: Mixer    -- ^ Mixer containing music to seek.
+            -> Float    -- ^ Offset in seconds
+            -> IO ()
+seekMusic mix@(Mixer chans vol music) toTime = do
+   case music of
+    Nothing -> do
+        print ("No music to seek!")
+        return ()
+    Just m -> do 
+        sfMusic_SetPlayingOffset m toTime
+
 
 -- | Starts a channel by name.
 startChannel    :: Mixer        -- ^ Mixer to search for the channel in
