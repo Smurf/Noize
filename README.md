@@ -6,9 +6,9 @@ Make noise with sfml-audio easily.  This will eventually be merged into the [sfm
 How to use Noize
 =====
 
-Noize is split into two parts `Sound` and `Music` datatypes.  These two parts are unified by a `StateT Mixer m a` type. The `Mixer` contains the `Music` playing and all channels of sound in a `Map String Channel` type.  Stateful operations (those that modify a `Channel` in the mixer) return a new `Mixer`. This is because every `Channel` has stateful information associated with it.
+Noize is split into two parts `Sound` and `Music` datatypes.  These two parts are unified by a `StateT Mixer m a` type. The `Mixer` contains the `Music` playing and all channels of sound in a `Map String Channel` type.  Stateful operations (those that modify a `Channel` in the mixer) return `StateT Mixer IO ()`. This is because every `Channel` has stateful information associated with it.
 
-Functions that modify the `Music` associated with the mixer do not return a modified `Mixer` because a `Mixer` can only have one `Music` channel loaded or playing at a time.
+Functions that modify the `Music` associated with the mixer do not return a modified `Mixer` because a `Mixer` can only have one `Music` channel loaded or playing at a time.  
 
 Please run `cabal configure && cabal haddock` to generate documentation.
 
