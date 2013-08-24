@@ -24,11 +24,14 @@ module Sound.Mixer.Noize (
         addChannel,
         -- ** Removing channels
         removeChannel,
-        -- ** Controlling channels
+        -- ** Controlling individual channels
         startChannel,
         stopChannel,
         pauseChannel,
-        
+        -- ** Controlling all channels
+        startChannels,
+        stopChannels,
+        pauseChannels,
         -- * Music
         Music(..),
         -- ** Loading music
@@ -118,7 +121,7 @@ destroyMixer    :: Mixer        -- ^ Mixer to destroy
                 -> IO (Mixer)   -- ^ == initMixer
 destroyMixer mix@(Mixer chans vol music) = do
     stopMixer mix
-    destroyMusic mix
+    removeMusic mix
     T.mapM destroyChannel chans
 
     return initMixer
@@ -157,7 +160,7 @@ loadMusic mix@(Mixer chans vol music) inFile = do
             return (Mixer chans vol (Just music'))
         
         Just music -> do
-            destroyMusic mix
+            removeMusic mix
             
             music' <- sfMusic_CreateFromFile inFile
             sfMusic_SetVolume music' vol
@@ -174,15 +177,25 @@ pauseChannel mix@(Mixer chans vol music) chanName = do
         Nothing -> do
             print ("No channel to pause named "++(show chanName))
             return mix
-        Just (Channel snd name stat vol) -> do
-            sfSound_Pause snd
-            stat' <- getSoundStatus snd
+        Just chan' -> do
             
-            let chan'   = Channel snd name stat vol
-                chans'  = Map.insert name chan' chans
+            chan''      <- _pauseChannel chan'
+            let chans'  = Map.insert chanName chan'' chans
             
             return (Mixer chans' vol music)
- 
+
+_pauseChannel chan@(Channel snd name stat vol) = do
+    sfSound_Pause snd
+    stat' <- getSoundStatus snd
+    return (Channel snd name stat' vol)
+
+-- | Pauses all channels in a mixer.
+pauseChannels   :: Mixer    -- ^ Input mixer
+                -> IO Mixer -- ^ Mixer with updated state
+pauseChannels mix@(Mixer chans vol music) = do
+    chans' <- T.mapM _pauseChannel chans
+    return (Mixer chans' vol music)
+    
 -- | If music is playing pause music, otherwise nothing is done.
 pauseMusic :: Mixer -> IO ()
 pauseMusic mix@(Mixer _ _ music) = do
@@ -219,14 +232,32 @@ startChannel mix@(Mixer chans vol music) chanName = do
         Nothing -> do
             print ("No channel named "++(show chanName)++" to start!")
             return mix
-        Just (Channel snd name stat vol) -> do
-            sfSound_Play snd
-            stat' <- getSoundStatus snd
 
-            let chan' = Channel snd name stat' vol
-                chans' = Map.insert name chan' chans
+        Just chan' -> do
+            chan'' <- _startChannel chan'
+            let chans' = Map.insert chanName chan'' chans
             
             return (Mixer chans' vol music)
+
+
+_startChannel chan@(Channel snd name stat vol) = do
+    sfSound_Play snd
+    stat' <- getSoundStatus snd
+    return (Channel snd name stat' vol)
+
+startChannels   :: Mixer    -- ^ Mixer to start channels of
+                -> IO Mixer -- ^ Return Mixer with updated channels
+startChannels mix@(Mixer chans vol music) = do
+    chans' <- T.mapM _startChannel chans
+    return (Mixer chans' vol music)
+
+-- | Starts the music and all sound channels in the mixer.
+startMixer  :: Mixer        -- ^ Mixer to start
+            -> IO (Mixer)   -- ^ Mixer with updated status'
+startMixer mix@(Mixer chans vol music) = do
+    startMusic mix
+    startChannels mix
+
 -- | This will play the music that is loaded via
 -- loadMusic. 
 startMusic :: Mixer -> IO ()
@@ -259,18 +290,21 @@ stopChannel mix@(Mixer chans vol music) chanName = do
             return (Mixer chans' vol music)
 
 _stopChannel :: Channel -> IO Channel
-_stopChannel chan@(Channel snd alias stat vol) = do
+_stopChannel chan@(Channel snd name stat vol) = do
     sfSound_Stop snd
     stat' <- getSoundStatus snd
-    return (Channel snd alias stat' vol)
+    return (Channel snd name stat' vol)
 
---stopChannels :: Mixer -> IO Mixer
+-- | Stops all channels playing.
+stopChannels    :: Mixer    -- ^ Mixer to stop channels on
+                -> IO Mixer -- ^ Mixer with updated statuses
 stopChannels mix@(Mixer chans vol music) = do
     chans' <- T.mapM (_stopChannel) chans
     return (Mixer chans' vol music)
 
-stopMixer   :: Mixer
-            -> IO (Mixer)
+-- | Stops all channels and music in a mixer.
+stopMixer   :: Mixer        -- ^ Mixer to stop
+            -> IO (Mixer)   -- ^ Mixer with updated channel statues
 stopMixer mix@(Mixer chans vol music) = do
     stopMusic mix
     stopChannels mix
