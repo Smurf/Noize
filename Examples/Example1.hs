@@ -22,7 +22,11 @@ setupMusic = do
 
     removeChannel "shpong2"
     removeMusic
-
+    ph <- musicPlayingOffset
+    liftIO $ print $ show ph
+    pauseChannels
+--build with
+--ghc --make Example1.hs -i./../src
 main = do
     let mix = initMixer
     mix' <- withMixer mix $ setupMusic
