@@ -14,9 +14,9 @@ module Sound.Mixer.Noize (
         initMixer,
         destroyMixer,
         -- ** Controlling mixers
-        --startMix
-        --pauseMix
-        --stopMix
+        startMixer,
+        pauseMixer,
+        stopMixer,
         
         -- * Channel
         Channel(..),
@@ -126,20 +126,6 @@ destroyMixer mix@(Mixer chans vol music) = do
 
     return initMixer
 
-
--- | This will destroy the music playing and insert
--- @Nothing@.
-removeMusic :: Mixer -> IO (Mixer)
-removeMusic mix@(Mixer chans vol music) = do
-    case music of
-        Nothing -> do
-            return mix
-        Just music -> do
-            sfMusic_Stop music
-            sfMusic_Destroy music
-            
-            return (Mixer chans vol Nothing)
-
 -- | Initialize a mixer.  This must be called first!
 initMixer :: Mixer
 initMixer = Mixer Map.empty 100.0 Nothing
@@ -195,7 +181,14 @@ pauseChannels   :: Mixer    -- ^ Input mixer
 pauseChannels mix@(Mixer chans vol music) = do
     chans' <- T.mapM _pauseChannel chans
     return (Mixer chans' vol music)
-    
+
+-- | Pauses all channels and music in a mixer.
+pauseMixer      :: Mixer    -- ^ Input Mixer
+                -> IO Mixer -- ^ Mixer with new channel states.
+pauseMixer mix@(Mixer chans vol music) = do
+    pauseMusic mix
+    pauseChannels mix
+
 -- | If music is playing pause music, otherwise nothing is done.
 pauseMusic :: Mixer -> IO ()
 pauseMusic mix@(Mixer _ _ music) = do
@@ -221,6 +214,22 @@ removeChannel mix@(Mixer chans vol music) chanName = do
         Nothing -> do
             print ("No channel named "++(show chanName)++"to remove!")
             return mix
+
+
+-- | This will destroy the music playing and insert
+-- @Nothing@.
+removeMusic :: Mixer -> IO (Mixer)
+removeMusic mix@(Mixer chans vol music) = do
+    case music of
+        Nothing -> do
+            return mix
+
+        Just music -> do
+            sfMusic_Stop music
+            sfMusic_Destroy music
+            
+            return (Mixer chans vol Nothing)
+
 
 -- | Starts a channel by name.
 startChannel    :: Mixer        -- ^ Mixer to search for the channel in
