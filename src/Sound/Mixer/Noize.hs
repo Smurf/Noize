@@ -458,10 +458,12 @@ setupMusic = do
     startChannel "shpongwav"
     channelPan "shpongwav" ( -50.0, 0.0, 0.0)
 
-withMix mix = flip runStateT
+withMix mix = flip execStateT mix
+
 main = do
     let mix = initMixer
-    flip runStateT mix $ setupMusic
+    mix' <- withMix mix $ setupMusic
+    print $ show mix'
     --mix <- addChannel mix "/home/sam/src/Noize/shpongle-mono.ogg" "shpong2" 100.0
     --mix <- startChannel mix "shpong2"
     forever $ do (threadDelay 1000)
