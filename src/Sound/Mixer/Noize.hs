@@ -24,14 +24,24 @@ module Sound.Mixer.Noize (
         addChannel,
         -- ** Removing channels
         removeChannel,
-        -- ** Controlling individual channels
+        -- ** Controlling an individual channel
+        -- *** Playing State
         startChannel,
         stopChannel,
         pauseChannel,
+        -- *** Playhead Position    
+        seekChannel,
+        playheadPosition,
+        -- *** Properties (length, channels...)
+        {-channelDuration,
+        channelCount,
+        channelSampleRate,-}
         -- ** Controlling all channels
+        -- *** Playing State
         startChannels,
         stopChannels,
         pauseChannels,
+
         -- * Music
         Music(..),
         -- ** Loading music
@@ -39,9 +49,11 @@ module Sound.Mixer.Noize (
         withMusic,
         removeMusic,
         -- ** Controlling music
+        -- *** Playing State
         startMusic,
         pauseMusic,
-        stopMusic
+        stopMusic,
+        -- *** Playhead Position
         )
     where
 
@@ -54,9 +66,12 @@ import qualified Data.Traversable as T
 
 data Channel = Channel {    sndData :: Ptr Sound, -- ^ The pointer to the memory
                                                   -- address where the sound is
-                            alias   :: String,  -- ^ The name of the channel
-                            status  :: Status,  -- ^ The status of the channel
-                            volume  :: Float    -- ^ The volume of the channel
+                            alias       :: String,  -- ^ The name of the channel
+                            status      :: Status,  -- ^ The status of the channel
+                            duration    :: Float,     -- ^ Duration of channel in seconds
+                            sampleRate  :: Int,     -- ^ samples/sec of channel
+                            chanCount   :: Int,     -- ^ Number of channels in sound
+                            volume      :: Float   -- ^ The volume of the channel
                        }
     deriving (Show)
 
@@ -89,9 +104,12 @@ addChannel mix@(Mixer chans vol music) inFile name chanVol = do
             sfSound_SetBuffer snd buffer
 
             sfSound_SetVolume snd chanVol
-            stat <- getSoundStatus snd
+            stat    <- getSoundStatus snd
+            dur     <- sfSoundBuffer_GetDuration buffer
+            rate    <- sfSoundBuffer_GetSampleRate buffer
+            chanCt  <- sfSoundBuffer_GetChannelCount buffer
 
-            return (Channel snd name stat chanVol)
+            return (Channel snd name stat dur (fromIntegral rate) (fromIntegral chanCt) chanVol)
 
 -- | This will pan a MONO channel in 3d space
 -- relative to 0,0,0. 
@@ -110,10 +128,10 @@ channelPan mix@(Mixer chans vol music) chanName (x, y, z) = do
             sfSound_SetPosition (sndData chan') x y z
             return () 
 
-destroyChannel (Channel snd _ _ _) = do
+destroyChannel chan = do
     sfSound_Stop snd
     sfSound_Destroy snd
-
+    where snd = sndData chan
 -- | Destroys a mixer.  First stops all sounds playing
 -- then frees ptrs associated with a mixer.
 -- @destroyMixer myMix == initMixer@
@@ -170,10 +188,12 @@ pauseChannel mix@(Mixer chans vol music) chanName = do
             
             return (Mixer chans' vol music)
 
-_pauseChannel chan@(Channel snd name stat vol) = do
+_pauseChannel chan = do
     sfSound_Pause snd
     stat' <- getSoundStatus snd
-    return (Channel snd name stat' vol)
+    return chan{status = stat'}
+    where snd = sndData chan
+
 
 -- | Pauses all channels in a mixer.
 pauseChannels   :: Mixer    -- ^ Input mixer
@@ -198,6 +218,19 @@ pauseMusic mix@(Mixer _ _ music) = do
             sfMusic_Pause music
             return ()
 
+-- | Returns the playhead position of a named channel.
+playheadPosition    :: Mixer    -- ^ Mixer containing channel
+                    -> String   -- ^ Channel name
+                    -> IO Float -- ^ Position of playback in seconds
+playheadPosition mix@(Mixer chans vol music) chanName = do
+    let chan = Map.lookup chanName chans
+    case chan of
+        Just chan' -> do
+            sfSound_GetPlayingOffset (sndData chan')
+        
+        Nothing -> do
+            print ("No channel of name "++(show chanName)++" to get playhead position")
+            return 0.0
 -- | Removes a channel by name.
 removeChannel   :: Mixer        -- ^ Mixer to search in.
                 -> String       -- ^ Name of channel to search for
@@ -205,7 +238,7 @@ removeChannel   :: Mixer        -- ^ Mixer to search in.
 removeChannel mix@(Mixer chans vol music) chanName = do
     let chan = Map.lookup chanName chans
     case chan of
-        Just chan'@(Channel snd name stat vol) -> do
+        Just chan' -> do
             let chans'  = Map.delete chanName chans
             
             destroyChannel chan'
@@ -230,6 +263,20 @@ removeMusic mix@(Mixer chans vol music) = do
             
             return (Mixer chans vol Nothing)
 
+-- | Seeks channel to time given in seconds
+-- This is 'side-effect' free on the Mixer supplied.
+seekChannel :: Mixer    -- ^ Mixer containing channel
+            -> String   -- ^ Channel name
+            -> Float    -- ^ Time in seconds
+            -> IO ()
+seekChannel mix@(Mixer chans vol music) chanName toTime = do
+    let chan = Map.lookup chanName chans
+    case chan of
+        Nothing -> do
+            print ("No channel by the name of "++(show chanName)++"to seek!")
+
+        Just chan' -> do
+            sfSound_SetPlayingOffset (sndData chan') toTime
 
 -- | Starts a channel by name.
 startChannel    :: Mixer        -- ^ Mixer to search for the channel in
@@ -249,10 +296,12 @@ startChannel mix@(Mixer chans vol music) chanName = do
             return (Mixer chans' vol music)
 
 
-_startChannel chan@(Channel snd name stat vol) = do
+_startChannel chan = do
     sfSound_Play snd
     stat' <- getSoundStatus snd
-    return (Channel snd name stat' vol)
+    return chan{status = stat'}
+    where snd = sndData chan
+
 
 startChannels   :: Mixer    -- ^ Mixer to start channels of
                 -> IO Mixer -- ^ Return Mixer with updated channels
@@ -299,11 +348,11 @@ stopChannel mix@(Mixer chans vol music) chanName = do
             return (Mixer chans' vol music)
 
 _stopChannel :: Channel -> IO Channel
-_stopChannel chan@(Channel snd name stat vol) = do
+_stopChannel chan = do
     sfSound_Stop snd
     stat' <- getSoundStatus snd
-    return (Channel snd name stat' vol)
-
+    return chan{status = stat'}
+    where snd = sndData chan
 -- | Stops all channels playing.
 stopChannels    :: Mixer    -- ^ Mixer to stop channels on
                 -> IO Mixer -- ^ Mixer with updated statuses
