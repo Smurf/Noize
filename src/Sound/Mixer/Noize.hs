@@ -445,6 +445,6 @@ withMusic inFile = do
     startMusic
 
 -- | Run a StateT action on a mixer and return the resulting mixer.
-withMixer :: Monad m => Mixer -> StateT Mixer m a -> m a
-withMixer = flip evalStateT
+withMixer :: Monad m => Mixer -> StateT Mixer m a -> m Mixer
+withMixer = flip execStateT
 
