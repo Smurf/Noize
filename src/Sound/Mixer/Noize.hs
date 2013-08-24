@@ -14,6 +14,7 @@ module Sound.Mixer.Noize (
         initMixer,
         destroyMixer,
         -- ** Controlling mixers
+        withMixer,
         startMixer,
         pauseMixer,
         stopMixer,
@@ -32,6 +33,8 @@ module Sound.Mixer.Noize (
         -- *** Playhead Position    
         seekChannel,
         playheadPosition,
+        -- *** 3D Position
+        channelPan,
         
         -- ** Controlling all channels
         -- *** Playing State
@@ -53,14 +56,13 @@ module Sound.Mixer.Noize (
         -- *** Playhead Position
         seekMusic,
         musicPlayingOffset,
-        main
         )
     where
-import Control.Concurrent (threadDelay)
+
 import Control.Monad.Trans.State.Strict
 import Control.Monad.IO.Class
-import Debug.Trace
 import Control.Monad
+
 import Foreign.Ptr
 import Sound.SFML.LowLevel
 
@@ -276,6 +278,7 @@ removeChannel chanName = do
             let chans'  = Map.delete chanName chans
             
             liftIO $ destroyChannel chan'
+            put mix{channels=chans'}
             return mix{channels=chans'}
             
         Nothing -> do
@@ -297,6 +300,7 @@ removeMusic = do
             liftIO $ sfMusic_Stop music'
             liftIO $ sfMusic_Destroy music'
             
+            put mix{music=Nothing}
             return (mix{music=Nothing})
 
 -- | Seeks channel to time given in seconds
@@ -446,24 +450,7 @@ withMusic inFile = do
     loadMusic inFile
     startMusic
 
-setupMusic = do
-    get
-    withMusic "/home/sam/src/Noize/shpongle.ogg"
-    
-    addChannel "/home/sam/src/Noize/shpongle-mono.ogg" "shpong2" 100.0
-    startChannel "shpong2"
-    channelPan "shpong2" (50.0, 0.0, 0.0)
-    
-    addChannel "/home/sam/src/Noize/shpongle.wav" "shpongwav" 50.0
-    startChannel "shpongwav"
-    channelPan "shpongwav" ( -50.0, 0.0, 0.0)
+-- | Run a StateT action on a mixer and return the resulting mixer.
+withMixer :: Monad m => Mixer -> StateT Mixer m a -> m a
+withMixer = flip evalStateT
 
-withMix mix = flip execStateT mix
-
-main = do
-    let mix = initMixer
-    mix' <- withMix mix $ setupMusic
-    print $ show mix'
-    --mix <- addChannel mix "/home/sam/src/Noize/shpongle-mono.ogg" "shpong2" 100.0
-    --mix <- startChannel mix "shpong2"
-    forever $ do (threadDelay 1000)
